@@ -36,6 +36,13 @@ bool silentMode = false;
 bool buttonArmed = true;
 TempZone lastTempZone = TEMP_NORMAL;
 
+// Sensör son değerleri — buzzer her loop'ta bunları kullanır
+int lastDistanceCm = -1;
+bool lastNearObject = false;
+bool lastMotion = false;
+bool lastIsDark = false;
+TempZone lastTempZoneForBuzzer = TEMP_NORMAL;
+
 bool isPirReady() {
   return millis() - startedAt >= PIR_WARMUP_MS;
 }
@@ -267,6 +274,20 @@ void loop() {
   updateButton();
 
   const unsigned long now = millis();
+
+  // Buzzer her loop'ta kontrol edilir — sensör aralığına bağlı değil
+  if (!silentMode) {
+    const unsigned long interval = distanceBuzzerInterval(lastDistanceCm);
+    if (interval > 0 && now - lastBuzzerAt >= interval) {
+      beepForDistance(lastDistanceCm);
+      lastBuzzerAt = now;
+    } else if (interval == 0 && lastMotion && now - lastBuzzerAt >= MOTION_BUZZER_INTERVAL_MS) {
+      tone(BUZZER_PIN, 1200, 35);
+      lastBuzzerAt = now;
+    }
+  }
+
+  // Sensör okuması 2 saniyede bir
   if (now - lastReadAt < SENSOR_INTERVAL_MS && lastReadAt != 0) return;
   lastReadAt = now;
 
@@ -279,6 +300,12 @@ void loop() {
   const int distanceCm = readDistanceCm();
   const bool nearObject = distanceCm > 0 && distanceCm <= NEAR_DISTANCE_CM;
 
+  // Kalıcı değerleri güncelle
+  lastDistanceCm = distanceCm;
+  lastNearObject = nearObject;
+  lastMotion = motion;
+  lastIsDark = isDark;
+
   // Sıcaklık alarmı — zone değişince melodi çal
   TempZone tempZone = TEMP_NORMAL;
   if (dhtOk) {
@@ -287,6 +314,7 @@ void loop() {
 
     if (tempZone != lastTempZone) {
       lastTempZone = tempZone;
+      lastTempZoneForBuzzer = tempZone;
       if (!silentMode) {
         if (tempZone == TEMP_HOT) playHighTempAlarm();
         else if (tempZone == TEMP_COLD) playLowTempAlarm();
@@ -296,18 +324,6 @@ void loop() {
 
   // LED
   digitalWrite(STATUS_LED_PIN, (isDark || nearObject) ? HIGH : LOW);
-
-  // Mesafe bazlı buzzer
-  if (!silentMode) {
-    const unsigned long interval = distanceBuzzerInterval(distanceCm);
-    if (interval > 0 && now - lastBuzzerAt >= interval) {
-      beepForDistance(distanceCm);
-      lastBuzzerAt = now;
-    } else if (interval == 0 && motion && now - lastBuzzerAt >= MOTION_BUZZER_INTERVAL_MS) {
-      tone(BUZZER_PIN, 1200, 35);
-      lastBuzzerAt = now;
-    }
-  }
 
   drawPanel(temperatureC, humidity, dhtOk, isDark, pirReady, motion, distanceCm, nearObject, tempZone);
   printSerialStatus(temperatureC, humidity, dhtOk, isDark, pirReady, motion, distanceCm, nearObject, tempZone);
