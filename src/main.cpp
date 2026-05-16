@@ -17,12 +17,13 @@ constexpr uint8_t BUZZER_PIN = 9;
 constexpr unsigned long SENSOR_INTERVAL_MS = 2000;
 constexpr unsigned long PIR_WARMUP_MS = 30000;
 constexpr unsigned long MOTION_BUZZER_INTERVAL_MS = 6000;
-constexpr unsigned long BUTTON_IGNORE_MS = 200;
+constexpr unsigned long LONG_PRESS_MS = 1000;
 constexpr int NEAR_DISTANCE_CM = 30;
 constexpr float TEMP_HIGH_C = 28.0;
 constexpr float TEMP_LOW_C = 18.0;
 
 enum TempZone : uint8_t { TEMP_NORMAL, TEMP_HOT, TEMP_COLD };
+enum ButtonState : uint8_t { BTN_IDLE, BTN_DEBOUNCING, BTN_PRESSED };
 
 DHT dht(DHT_PIN, DHT_TYPE);
 U8X8_SH1106_128X64_NONAME_HW_I2C display(U8X8_PIN_NONE);
@@ -30,10 +31,12 @@ U8X8_SH1106_128X64_NONAME_HW_I2C display(U8X8_PIN_NONE);
 unsigned long startedAt = 0;
 unsigned long lastReadAt = 0;
 unsigned long lastBuzzerAt = 0;
-unsigned long buttonIgnoreUntil = 0;
+unsigned long pressStartAt = 0;
 
 bool silentMode = false;
-bool buttonArmed = true;
+bool musicMode = false;
+bool longPressHandled = false;
+ButtonState btnState = BTN_IDLE;
 TempZone lastTempZone = TEMP_NORMAL;
 
 // Sensör son değerleri — buzzer her loop'ta bunları kullanır
@@ -42,6 +45,145 @@ bool lastNearObject = false;
 bool lastMotion = false;
 bool lastIsDark = false;
 TempZone lastTempZoneForBuzzer = TEMP_NORMAL;
+
+// ── Tetris (Korobeiniki) ──────────────────────────────────────
+static const uint16_t TETRIS_FREQS[] PROGMEM = {
+  659,494,523,587,523,494,  440,440,523,659,587,523,
+  494,523,587,659,          523,440,440,0,
+  587,698,880,784,698,      659,523,659,587,523,
+  494,494,523,587,659,      523,440,440
+};
+static const uint16_t TETRIS_DURS[] PROGMEM = {
+  250,125,125,250,125,125,  250,125,125,250,125,125,
+  375,125,250,250,          250,250,500,250,
+  375,125,250,125,125,      375,125,250,125,125,
+  250,125,125,250,250,      250,250,500
+};
+constexpr uint8_t TETRIS_LEN = 38;
+
+// ── Super Mario Bros ──────────────────────────────────────────
+static const uint16_t MARIO_FREQS[] PROGMEM = {
+  659,659,0,659,0,523,659,
+  784,0,392,0,
+  523,0,392,0,330,0,
+  440,0,494,0,466,440,
+  392,659,784,880,698,784,
+  0,659,523,587,494,0
+};
+static const uint16_t MARIO_DURS[] PROGMEM = {
+  125,125,125,125,125,125,250,
+  250,250,250,500,
+  375,125,250,250,375,125,
+  250,125,250,125,125,250,
+  167,167,167,250,125,125,
+  125,250,125,125,375,125
+};
+constexpr uint8_t MARIO_LEN = 35;
+
+// ── Harry Potter (Hedwig's Theme) ─────────────────────────────
+static const uint16_t HP_FREQS[] PROGMEM = {
+  494,659,784,740,659,
+  988,880,
+  740,
+  659,784,740,622,
+  659,
+  494,659,784,740,659,
+  988,1175,1047,
+  988
+};
+static const uint16_t HP_DURS[] PROGMEM = {
+  300,450,150,300,600,
+  300,900,
+  900,
+  450,150,300,600,
+  900,
+  300,450,150,300,600,
+  300,300,900,
+  900
+};
+constexpr uint8_t HP_LEN = 22;
+
+// ── Star Wars — Imperial March ────────────────────────────────
+static const uint16_t SW_FREQS[] PROGMEM = {
+  392,392,392,311,466,392,311,466,392,
+  587,587,587,622,466,370,311,466,392
+};
+static const uint16_t SW_DURS[] PROGMEM = {
+  400,400,400,300,100,400,300,100,800,
+  400,400,400,300,100,400,300,100,800
+};
+constexpr uint8_t SW_LEN = 18;
+
+// ── Pirates of the Caribbean ──────────────────────────────────
+static const uint16_t PIRATES_FREQS[] PROGMEM = {
+  294,330,349,392,440,466,440,392,349,330,294,
+  330,349,392,440,587,440,392,440,294,0
+};
+static const uint16_t PIRATES_DURS[] PROGMEM = {
+  200,150,150,200,150,150,200,150,150,200,400,
+  150,150,200,300,300,150,150,300,400,300
+};
+constexpr uint8_t PIRATES_LEN = 21;
+
+// ── Ghostbusters ──────────────────────────────────────────────
+static const uint16_t GB_FREQS[] PROGMEM = {
+  330,392,440,0,330,392,466,440,0,
+  330,392,440,523,440,392,330,
+  330,392,440,0,330,392,466,440,0,
+  349,330,294,0
+};
+static const uint16_t GB_DURS[] PROGMEM = {
+  200,200,200,100,200,200,200,400,200,
+  150,150,150,300,150,150,300,
+  200,200,200,100,200,200,200,400,200,
+  200,200,400,400
+};
+constexpr uint8_t GB_LEN = 29;
+
+// ── Nokia Ringtone ────────────────────────────────────────────
+static const uint16_t NOKIA_FREQS[] PROGMEM = {
+  659,587,370,415,554,494,294,330,
+  494,440,277,330,440
+};
+static const uint16_t NOKIA_DURS[] PROGMEM = {
+  125,125,250,250,125,125,250,250,
+  125,125,250,250,500
+};
+constexpr uint8_t NOKIA_LEN = 13;
+
+// ── DOOM (E1M1 — At Doom's Gate) ─────────────────────────────
+static const uint16_t DOOM_FREQS[] PROGMEM = {
+  330,330,659,330,294,330,262,330,247,0,233,0,247,0,
+  330,330,659,330,294,330,262,247,0,
+  330,330,659,330,294,330,262,330,247,0,233,0,247,0,
+  392,0,392,0,349,0,392,0,330,0,311,0,330,0
+};
+static const uint16_t DOOM_DURS[] PROGMEM = {
+  100,100,100,100,100,100,100,100,100,100,100,100,100,300,
+  100,100,100,100,100,100,100,100,300,
+  100,100,100,100,100,100,100,100,100,100,100,100,100,300,
+  200,100,200,100,200,100,200,100,200,100,200,100,200,200
+};
+constexpr uint8_t DOOM_LEN = 51;
+
+// ── Mortal Kombat ─────────────────────────────────────────────
+static const uint16_t MK_FREQS[] PROGMEM = {
+  466,466,466,466,466,466,0,
+  370,415,466,0,370,415,466,0,
+  466,523,466,370,0,349,370,466,0,415,466,
+  466,466,466,466,466,466,0,
+  370,415,466,0,370,415,466,0,
+  523,466,415,370,415,466,523
+};
+static const uint16_t MK_DURS[] PROGMEM = {
+  100,100,100,100,100,100,100,
+  200,200,400,200,200,200,400,200,
+  150,150,150,150,100,100,150,300,100,200,400,
+  100,100,100,100,100,100,100,
+  200,200,400,200,200,200,400,200,
+  200,200,200,200,200,200,400
+};
+constexpr uint8_t MK_LEN = 48;
 
 bool isPirReady() {
   return millis() - startedAt >= PIR_WARMUP_MS;
@@ -96,6 +238,23 @@ void drawSilentModeFeedback() {
   display.print(silentMode ? F("ACIK") : F("KAPALI"));
 }
 
+void drawMusicModeScreen() {
+  display.clear();
+  display.setCursor(0, 0);
+  display.print(F("Mini Oda Paneli"));
+  display.setCursor(0, 3);
+  display.print(F("  Muzik Modu"));
+  display.setCursor(0, 7);
+  display.print(F("Cikis: uzun bas"));
+}
+
+void drawNowPlaying(const __FlashStringHelper* name) {
+  display.setCursor(0, 5);
+  display.print(F("                "));
+  display.setCursor(0, 5);
+  display.print(name);
+}
+
 void drawBootScreen() {
   display.clear();
   display.setCursor(0, 0);
@@ -120,23 +279,78 @@ int readDistanceCm() {
 
 void updateButton() {
   const unsigned long now = millis();
-  if (now < buttonIgnoreUntil) return;
-
   const bool raw = digitalRead(BUTTON_PIN) == LOW;
-  if (!raw) {
-    buttonArmed = true;
-    return;
+
+  switch (btnState) {
+    case BTN_IDLE:
+      if (raw) {
+        btnState = BTN_DEBOUNCING;
+        pressStartAt = now;
+        longPressHandled = false;
+      }
+      break;
+
+    case BTN_DEBOUNCING:
+      if (!raw) {
+        // Bounce — yoksay
+        btnState = BTN_IDLE;
+      } else if (now - pressStartAt >= 50) {
+        // 50ms boyunca LOW kaldı — gerçek basış onaylandı
+        btnState = BTN_PRESSED;
+      }
+      break;
+
+    case BTN_PRESSED:
+      if (!raw) {
+        // Bırakıldı
+        btnState = BTN_IDLE;
+        if (!longPressHandled) {
+          // Kısa basış — sessiz modu değiştir
+          silentMode = !silentMode;
+          Serial.print(F("Sessiz mod: "));
+          Serial.println(silentMode ? F("ACIK") : F("KAPALI"));
+          drawSilentModeFeedback();
+          lastReadAt = 0;
+        }
+      } else if (!longPressHandled && now - pressStartAt >= LONG_PRESS_MS) {
+        // Uzun basış — müzik modunu değiştir
+        longPressHandled = true;
+        musicMode = !musicMode;
+        if (musicMode) {
+          Serial.println(F("Muzik modu: ACIK"));
+          drawMusicModeScreen();
+        } else {
+          Serial.println(F("Muzik modu: KAPALI"));
+          noTone(BUZZER_PIN);
+          lastReadAt = 0;
+        }
+      }
+      break;
   }
-  if (!buttonArmed) return;
+}
 
-  buttonArmed = false;
-  buttonIgnoreUntil = now + BUTTON_IGNORE_MS;
+// Gecikme sırasında butonu kontrol eder — müzik modu çıkışına izin verir
+void delayWithButtonCheck(unsigned long ms) {
+  const unsigned long end = millis() + ms;
+  while (millis() < end) {
+    updateButton();
+    if (!musicMode) return;
+    delay(5);
+  }
+}
 
-  silentMode = !silentMode;
-  Serial.print(F("Sessiz mod: "));
-  Serial.println(silentMode ? F("ACIK") : F("KAPALI"));
-  drawSilentModeFeedback();
-  lastReadAt = 0;
+void playMelody(const uint16_t* freqs, const uint16_t* durs, uint8_t len) {
+  for (uint8_t i = 0; i < len; i++) {
+    if (!musicMode) { noTone(BUZZER_PIN); return; }
+    const uint16_t freq = pgm_read_word(&freqs[i]);
+    const uint16_t dur  = pgm_read_word(&durs[i]);
+    if (freq > 0) {
+      tone(BUZZER_PIN, freq, dur);
+    } else {
+      noTone(BUZZER_PIN);
+    }
+    delayWithButtonCheck(dur);
+  }
 }
 
 void drawPanel(float temperatureC, float humidity, bool dhtOk, bool isDark,
@@ -272,6 +486,47 @@ void setup() {
 
 void loop() {
   updateButton();
+
+  // Müzik modu — sensörler durur, sadece buzzer + LED çalışır
+  if (musicMode) {
+    digitalWrite(STATUS_LED_PIN, HIGH);
+
+    drawNowPlaying(F("Tetris"));
+    playMelody(TETRIS_FREQS, TETRIS_DURS, TETRIS_LEN);
+    if (!musicMode) return;
+
+    drawNowPlaying(F("Mario"));
+    playMelody(MARIO_FREQS, MARIO_DURS, MARIO_LEN);
+    if (!musicMode) return;
+
+    drawNowPlaying(F("Harry Potter"));
+    playMelody(HP_FREQS, HP_DURS, HP_LEN);
+    if (!musicMode) return;
+
+    drawNowPlaying(F("Star Wars"));
+    playMelody(SW_FREQS, SW_DURS, SW_LEN);
+    if (!musicMode) return;
+
+    drawNowPlaying(F("Pirates"));
+    playMelody(PIRATES_FREQS, PIRATES_DURS, PIRATES_LEN);
+    if (!musicMode) return;
+
+    drawNowPlaying(F("Ghostbusters"));
+    playMelody(GB_FREQS, GB_DURS, GB_LEN);
+    if (!musicMode) return;
+
+    drawNowPlaying(F("Nokia"));
+    playMelody(NOKIA_FREQS, NOKIA_DURS, NOKIA_LEN);
+    if (!musicMode) return;
+
+    drawNowPlaying(F("DOOM"));
+    playMelody(DOOM_FREQS, DOOM_DURS, DOOM_LEN);
+    if (!musicMode) return;
+
+    drawNowPlaying(F("Mortal Kombat"));
+    playMelody(MK_FREQS, MK_DURS, MK_LEN);
+    return;
+  }
 
   const unsigned long now = millis();
 
