@@ -62,9 +62,9 @@ void playLowTempAlarm() {
 
 // Mesafe bölgesine göre buzzer aralığı
 unsigned long distanceBuzzerInterval(int distanceCm) {
-  if (distanceCm > 0 && distanceCm <= 10) return 400;
-  if (distanceCm > 10 && distanceCm <= 20) return 2000;
-  if (distanceCm > 20 && distanceCm <= NEAR_DISTANCE_CM) return 4000;
+  if (distanceCm > 0 && distanceCm <= 10) return 25;
+  if (distanceCm > 10 && distanceCm <= 20) return 100;
+  if (distanceCm > 20 && distanceCm <= NEAR_DISTANCE_CM) return 250;
   return 0;
 }
 
