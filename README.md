@@ -44,7 +44,7 @@ Projeyi geliştirirken her modülü ayrı ayrı test ettim, karşılaştığım 
 1. [PlatformIO IDE](https://platformio.org/) kurulu VS Code gereklidir.
 2. Repoyu klonla:
    ```
-   git clone https://github.com/mustafa-din066/mini-smart-room-panel.git
+   git clone https://github.com/mustaffadnC/mini-smart-room-panel.git
    ```
 3. VS Code'da projeyi aç.
 4. Arduino'yu USB ile bağla (COM6).
@@ -136,7 +136,7 @@ Each module was tested independently before integration. The project evolved fro
 1. Install [VS Code](https://code.visualstudio.com/) with [PlatformIO IDE](https://platformio.org/).
 2. Clone the repo:
    ```
-   git clone https://github.com/mustafa-din066/mini-smart-room-panel.git
+   git clone https://github.com/mustaffadnC/mini-smart-room-panel.git
    ```
 3. Open the project in VS Code.
 4. Connect Arduino via USB (COM6 or your port).
